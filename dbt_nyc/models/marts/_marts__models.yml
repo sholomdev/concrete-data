@@ -1,0 +1,12 @@
+version: 2
+
+models:
+  - name: fct_311_calls
+    description: "The primary fact table for 311 call analysis, including SLA metrics."
+    columns:
+      - name: resolution_hours
+        description: "Difference between created_at and closed_at in hours."
+      - name: is_within_sla
+        description: "True if closed_at is before or equal to due_at."
+      - name: is_zombie_request
+        description: "True if the request has been 'Open' for more than 30 days."

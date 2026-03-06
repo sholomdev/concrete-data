@@ -1,0 +1,54 @@
+# - name: Setup GCP credentials
+#   run: |
+#     echo '${{ secrets.GCP_SA_KEY }}' > $HOME/keyfile.json
+#     export GOOGLE_APPLICATION_CREDENTIALS=$HOME/keyfile.json
+
+# - name: Run dbt
+#   run: dbt run
+name: NYC 311 Daily Pipeline
+
+on:
+  schedule:
+    # This runs the pipeline every day at 8:00 AM UTC
+    - cron: '0 8 * * *'
+  workflow_dispatch: # Allows you to run it manually from the "Actions" tab
+
+jobs:
+  pipeline_job:
+    runs-on: ubuntu-latest
+    
+    env:
+      # These link your GitHub Secrets to environment variables
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      NYC_APP_TOKEN: ${{ secrets.NYC_APP_TOKEN }}
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp_key.json
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Create GCP Key File
+        # This step takes the SECRET and writes it to the WORKSPACE path
+        run: echo '${{ secrets.GCP_SA_KEY }}' > ${{ github.workspace }}/gcp_key.json
+        
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Dependencies
+        run: |
+          pip install dlt[bigquery] dbt-bigquery
+
+      - name: Authenticate GCP
+        # This converts your secret key into a physical file for the runner
+        run: echo '${{ secrets.GCP_SA_KEY }}' > ${{ github.workspace }}/gcp_key.json
+
+      - name: Run dlt Ingestion
+        run: python dlt_pipeline/nyc_311_ingestion.py
+
+      - name: Run dbt Build
+        run: |
+          cd dbt_nyc
+          dbt deps
+          dbt build

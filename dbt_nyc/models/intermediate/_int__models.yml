@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: int_resolution_metrics
+    description: "Calculates SLA compliance and resolution durations."
+    columns:
+      - name: unique_key
+        data_tests:
+          - unique
+          - not_null
+      - name: resolution_hours
+        description: "Hours elapsed between creation and closing."
+      - name: is_within_sla
+        description: "Flags if the city met its own deadline."

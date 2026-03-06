@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: nyc_raw
+    database: "{{ env_var('GCP_PROJECT_ID') }}"
+    schema: nyc_311_raw
+    freshness:
+      warn_after: {count: 24, period: hour}
+      error_after: {count: 48, period: hour}
+    loaded_at_field: _dlt_load_id # dlt metadata field
+    tables:
+      - name: nyc_311_data
+        description: "Raw 311 service request data ingested via dlt."

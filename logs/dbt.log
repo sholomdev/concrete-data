@@ -1,0 +1,62 @@
+[0m16:17:12.019083 [debug] [MainThread]: Sending event: {'category': 'dbt', 'action': 'invocation', 'label': 'start', 'context': [<snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x77193ee6f380>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x771940934e10>, <snowplow_tracker.self_describing_json.SelfDescribingJson object at 0x77193ddc7d90>]}
+
+
+============================== 16:17:12.034988 | fc0efcbe-cab0-42a0-a658-9bbccfc39b9a ==============================
+[0m16:17:12.034988 [info ] [MainThread]: Running with dbt=1.11.6
+[0m16:17:12.035861 [debug] [MainThread]: running dbt with arguments {'log_path': 'logs', 'use_experimental_parser': 'False', 'version_check': 'True', 'warn_error_options': 'WarnErrorOptionsV2(error=[], warn=[], silence=[])', 'printer_width': '80', 'log_cache_events': 'False', 'quiet': 'False', 'target_path': 'None', 'introspect': 'True', 'send_anonymous_usage_stats': 'True', 'indirect_selection': 'eager', 'static_parser': 'True', 'profiles_dir': '/home/vscode/.dbt', 'warn_error': 'None', 'fail_fast': 'False', 'log_format': 'default', 'debug': 'False', 'invocation_command': 'dbt init dbt_nyc', 'use_colors': 'True', 'empty': 'None', 'cache_selected_only': 'False', 'partial_parse': 'True', 'no_print': 'None', 'write_json': 'True'}
+[0m16:17:12.086167 [info ] [MainThread]: Creating dbt configuration folder at /home/vscode/.dbt
+[0m16:17:12.087738 [debug] [MainThread]: Starter project path: /home/vscode/.local/lib/python3.13/site-packages/dbt/include/starter_project
+[0m16:17:12.109032 [info ] [MainThread]: 
+Your new dbt project "dbt_nyc" was created!
+
+For more information on how to configure the profiles.yml file,
+please consult the dbt documentation here:
+
+  https://docs.getdbt.com/docs/configure-your-profile
+
+One more thing:
+
+Need help? Don't hesitate to reach out to us via GitHub issues or on Slack:
+
+  https://community.getdbt.com/
+
+Happy modeling!
+
+[0m16:17:12.109527 [info ] [MainThread]: Setting up your profile.
+[0m18:49:53.021145 [debug] [MainThread]: Got an exception trying to initialize tracking
+
+
+============================== 18:49:53.031719 | 4c165578-d667-49fb-b7a7-2d66ae927d66 ==============================
+[0m18:49:53.031719 [info ] [MainThread]: Running with dbt=1.11.6
+[0m18:49:53.032741 [debug] [MainThread]: running dbt with arguments {'partial_parse': 'True', 'fail_fast': 'False', 'profiles_dir': '/home/vscode/.dbt', 'static_parser': 'True', 'use_experimental_parser': 'False', 'cache_selected_only': 'False', 'log_cache_events': 'False', 'empty': 'None', 'version_check': 'True', 'debug': 'False', 'write_json': 'True', 'log_format': 'default', 'no_print': 'None', 'printer_width': '80', 'introspect': 'True', 'invocation_command': 'dbt debug', 'log_path': 'logs', 'warn_error': 'None', 'send_anonymous_usage_stats': 'True', 'target_path': 'None', 'indirect_selection': 'eager', 'warn_error_options': 'WarnErrorOptionsV2(error=[], warn=[], silence=[])', 'quiet': 'False', 'use_colors': 'True'}
+[0m18:49:53.049135 [info ] [MainThread]: dbt version: 1.11.6
+[0m18:49:53.049716 [info ] [MainThread]: python version: 3.13.11
+[0m18:49:53.050226 [info ] [MainThread]: python path: /usr/local/bin/python3.13
+[0m18:49:53.050904 [info ] [MainThread]: os info: Linux-6.8.0-1044-azure-x86_64-with-glibc2.41
+[0m18:49:53.051493 [info ] [MainThread]: Using profiles dir at /home/vscode/.dbt
+[0m18:49:53.052047 [info ] [MainThread]: Using profiles.yml file at /home/vscode/.dbt/profiles.yml
+[0m18:49:53.052599 [info ] [MainThread]: Using dbt_project.yml file at /workspaces/concrete-data/dbt_project.yml
+[0m18:49:53.053145 [info ] [MainThread]: Configuration:
+[0m18:49:53.053696 [info ] [MainThread]:   profiles.yml file [[31mERROR not found[0m]
+[0m18:49:53.054232 [info ] [MainThread]:   dbt_project.yml file [[31mERROR not found[0m]
+[0m18:49:53.054780 [info ] [MainThread]: Required dependencies:
+[0m18:49:53.055440 [debug] [MainThread]: Executing "git --help"
+[0m18:49:53.059231 [debug] [MainThread]: STDOUT: "b"usage: git [-v | --version] [-h | --help] [-C <path>] [-c <name>=<value>]\n           [--exec-path[=<path>]] [--html-path] [--man-path] [--info-path]\n           [-p | --paginate | -P | --no-pager] [--no-replace-objects] [--no-lazy-fetch]\n           [--no-optional-locks] [--no-advice] [--bare] [--git-dir=<path>]\n           [--work-tree=<path>] [--namespace=<name>] [--config-env=<name>=<envvar>]\n           <command> [<args>]\n\nThese are common Git commands used in various situations:\n\nstart a working area (see also: git help tutorial)\n   clone      Clone a repository into a new directory\n   init       Create an empty Git repository or reinitialize an existing one\n\nwork on the current change (see also: git help everyday)\n   add        Add file contents to the index\n   mv         Move or rename a file, a directory, or a symlink\n   restore    Restore working tree files\n   rm         Remove files from the working tree and from the index\n\nexamine the history and state (see also: git help revisions)\n   bisect     Use binary search to find the commit that introduced a bug\n   diff       Show changes between commits, commit and working tree, etc\n   grep       Print lines matching a pattern\n   log        Show commit logs\n   show       Show various types of objects\n   status     Show the working tree status\n\ngrow, mark and tweak your common history\n   backfill   Download missing objects in a partial clone\n   branch     List, create, or delete branches\n   commit     Record changes to the repository\n   merge      Join two or more development histories together\n   rebase     Reapply commits on top of another base tip\n   reset      Reset current HEAD to the specified state\n   switch     Switch branches\n   tag        Create, list, delete or verify tags\n\ncollaborate (see also: git help workflows)\n   fetch      Download objects and refs from another repository\n   pull       Fetch from and integrate with another repository or a local branch\n   push       Update remote refs along with associated objects\n\n'git help -a' and 'git help -g' list available subcommands and some\nconcept guides. See 'git help <command>' or 'git help <concept>'\nto read about a specific subcommand or concept.\nSee 'git help git' for an overview of the system.\n""
+[0m18:49:53.060172 [debug] [MainThread]: STDERR: "b''"
+[0m18:49:53.060673 [info ] [MainThread]:  - git [[32mOK found[0m]
+
+[0m18:49:53.061462 [info ] [MainThread]: Connection test skipped since no profile was found
+[0m18:49:53.062203 [info ] [MainThread]: [31m2 checks failed:[0m
+[0m18:49:53.062866 [info ] [MainThread]: dbt looked for a profiles.yml file in /home/vscode/.dbt/profiles.yml, but did
+not find one. For more information on configuring your profile, consult the
+documentation:
+
+https://docs.getdbt.com/docs/configure-your-profile
+
+
+[0m18:49:53.063586 [info ] [MainThread]: Project loading failed for the following reason:
+ project path </workspaces/concrete-data/dbt_project.yml> not found
+
+[0m18:49:53.065147 [debug] [MainThread]: Resource report: {"command_name": "debug", "command_success": false, "command_wall_clock_time": 0.11662957, "process_in_blocks": "64", "process_kernel_time": 0.31963, "process_mem_max_rss": "105232", "process_out_blocks": "16", "process_user_time": 2.130225}
+[0m18:49:53.065913 [debug] [MainThread]: Command `dbt debug` failed at 18:49:53.065770 after 0.12 seconds
+[0m18:49:53.066631 [debug] [MainThread]: Flushing usage events
