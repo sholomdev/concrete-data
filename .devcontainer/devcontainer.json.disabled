@@ -1,0 +1,11 @@
+{
+  "name": "concrete-data",
+	"image": "mcr.microsoft.com/devcontainers/python:3-3.13-trixie",
+  "features": {
+    "ghcr.io/jajera/features/gcloud-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" },
+    "ghcr.io/devcontainers/features/terraform:1": {},
+
+  },
+  "postCreateCommand": "make install"
+}
