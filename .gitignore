@@ -1,0 +1,40 @@
+# Secrets — never commit
+.dlt/secrets.toml
+infra/terraform.tfvars
+**/*.json.key
+**/credentials.json
+dashboard/.env
+
+# dlt state and local DB
+*.duckdb
+*.duckdb.wal
+pipeline/.dlt/
+!pipeline/sources/
+
+# dbt
+transform/target/
+transform/dbt_packages/
+transform/logs/
+
+# Evidence
+dashboard/.evidence/
+dashboard/build/
+dashboard/node_modules/
+
+# Terraform
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/*.tfplan
+infra/plan_output.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.env
+
+# OS
+.DS_Store
+Thumbs.db

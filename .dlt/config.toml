@@ -1,0 +1,14 @@
+[runtime]
+log_level = "INFO"
+dlthub_telemetry = false
+
+[sources.nyc_311]
+initial_start_date = "2025-01-01T00:00:00"
+
+[destination.bigquery]
+project = "YOUR_GCP_PROJECT_ID"
+dataset_name = "nyc_311_raw"
+location = "US"
+
+[destination.gcs_backup]
+bucket_url = "gs://YOUR_GCS_BUCKET/nyc311-raw-backup"

@@ -1,0 +1,52 @@
+version: 2
+
+sources:
+  - name: nyc_311_raw
+    description: Raw 311 service requests loaded by dlt from Socrata API.
+    # In BigQuery, database = GCP project. In DuckDB, omit it (dbt uses the file path).
+    database: "{{ env_var('GCP_PROJECT_ID', none) }}"
+    schema: "{{ 'nyc_311_raw' if env_var('ENV', 'dev') == 'prod' else 'nyc_311' }}"
+
+    freshness:
+      warn_after:  { count: 25, period: hour }
+      error_after: { count: 48, period: hour }
+
+    # updated_date is a real timestamp column dlt receives from Socrata.
+    # dlt's _dlt_load_id is a Unix epoch float-as-string; not suitable here.
+    loaded_at_field: updated_date
+
+    tables:
+      - name: requests
+        description: >
+          One row per 311 service request. Primary key is unique_key.
+          Incrementally loaded from updated_date; records may be updated
+          retroactively when the city updates resolution status.
+        identifier: requests
+        columns:
+          - name: unique_key
+            description: Socrata row identifier — stable across updates.
+            tests:
+              - unique
+              - not_null
+          - name: created_date
+            description: When the request was first created.
+            tests:
+              - not_null
+          - name: updated_date
+            description: Last time this record was touched by the city.
+            tests:
+              - not_null
+          - name: complaint_type
+            tests:
+              - not_null
+          - name: borough
+            tests:
+              - accepted_values:
+                  values:
+                    - BROOKLYN
+                    - BRONX
+                    - MANHATTAN
+                    - QUEENS
+                    - STATEN ISLAND
+                    - Unspecified
+                  quote: false

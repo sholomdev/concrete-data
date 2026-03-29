@@ -1,0 +1,15 @@
+{
+  "name": "concrete-data-dashboard",
+  "version": "1.0.0",
+  "scripts": {
+    "dev":   "evidence dev",
+    "build": "evidence build",
+    "preview": "evidence preview"
+  },
+  "dependencies": {
+    "@evidence-dev/evidence":         "^35.0.0",
+    "@evidence-dev/bigquery":         "^1.0.0",
+    "@evidence-dev/duckdb":           "^1.0.0",
+    "@evidence-dev/core-components":  "^5.0.0"
+  }
+}

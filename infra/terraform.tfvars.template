@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars (gitignored) and fill in your values.
+project_id  = "YOUR_GCP_PROJECT_ID"
+github_repo = "sholomdev/concrete-data"
+environment = "prod"
+bq_location = "US"
+gcs_location = "US"

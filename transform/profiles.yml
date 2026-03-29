@@ -1,0 +1,20 @@
+concrete_data:
+  target: "{{ env_var('ENV', 'dev') }}"
+
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_PATH', '../concrete_data_dev.duckdb') }}"
+      schema: nyc_311
+
+    prod:
+      type: bigquery
+      method: service-account
+      project: "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset: nyc_311_marts
+      location: US
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS', '') }}"
+      threads: 4
+      timeout_seconds: 300
+      job_retries: 2
+      job_creation_timeout_seconds: 30

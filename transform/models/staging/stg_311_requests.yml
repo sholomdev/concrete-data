@@ -1,0 +1,77 @@
+version: 2
+
+models:
+  - name: stg_311_requests
+    description: >
+      Cleaned, typed 311 requests from the Socrata raw source.
+      One row per unique_key; merges handle retroactive updates.
+
+    config:
+      elementary:
+        timestamp_column: created_at
+
+    tests:
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          min_value: 1
+          max_value: 500000
+          name: staging_has_reasonable_row_count
+      - elementary.volume_anomalies:
+          timestamp_column: created_at
+          time_bucket:
+            period: day
+          sensitivity: 3
+
+    columns:
+      - name: unique_key
+        tests:
+          - unique
+          - not_null
+
+      - name: created_at
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: "'2025-01-01'"
+              max_value: "current_timestamp"
+              name: created_at_in_valid_range
+
+      - name: status
+        tests:
+          - not_null
+          - accepted_values:
+              values: [OPEN, CLOSED, PENDING, IN_PROGRESS, ASSIGNED]
+
+      - name: borough
+        tests:
+          - accepted_values:
+              values:
+                - BROOKLYN
+                - BRONX
+                - MANHATTAN
+                - QUEENS
+                - STATEN ISLAND
+                - UNSPECIFIED
+
+      - name: complaint_type
+        tests:
+          - not_null
+          - elementary.dimension_anomalies:
+              timestamp_column: created_at
+              time_bucket:
+                period: day
+
+      - name: latitude
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 40.4
+              max_value: 40.95
+              mostly: 0.9
+              name: latitude_in_nyc_bounds
+
+      - name: longitude
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: -74.3
+              max_value: -73.7
+              mostly: 0.9
+              name: longitude_in_nyc_bounds

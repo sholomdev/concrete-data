@@ -1,0 +1,85 @@
+version: 2
+
+models:
+  - name: mart_complaints_daily
+    description: >
+      Daily complaint counts grouped by type, borough, agency, and status.
+      Partitioned by complaint_date in BigQuery; clustered on borough + type.
+
+    config:
+      elementary:
+        timestamp_column: complaint_date
+
+    tests:
+      - elementary.volume_anomalies:
+          timestamp_column: complaint_date
+          time_bucket:
+            period: day
+          sensitivity: 3
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          min_value: 1
+
+    columns:
+      - name: complaint_date
+        tests:
+          - not_null
+      - name: total_requests
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: close_rate_pct
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+              mostly: 0.99
+
+  - name: mart_resolution_time
+    description: >
+      Average and percentile resolution times for closed requests,
+      by complaint type, borough, and day.
+
+    columns:
+      - name: avg_hours_to_close
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 8760
+      - name: median_hours_to_close
+        tests:
+          - not_null
+
+  - name: mart_open_requests
+    description: All currently open 311 requests with age buckets and overdue flag.
+    columns:
+      - name: unique_key
+        tests:
+          - unique
+          - not_null
+      - name: age_bucket
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - "< 1 day"
+                - "1–3 days"
+                - "3–7 days"
+                - "1–4 weeks"
+                - "1–3 months"
+                - "3+ months"
+
+  - name: mart_pipeline_health
+    description: >
+      Daily row counts and quality metrics for the Evidence health page.
+      Used to detect anomalies and track data completeness over time.
+    columns:
+      - name: complaint_date
+        tests:
+          - unique
+          - not_null
+      - name: row_count
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0

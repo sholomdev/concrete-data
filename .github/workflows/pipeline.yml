@@ -1,0 +1,178 @@
+name: Daily pipeline
+
+on:
+  schedule:
+    # 05:00 UTC daily — well after NYC midnight to catch all prior-day updates
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      full_refresh:
+        description: "Force full refresh (drop and reload all data)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write   # required for Workload Identity Federation
+
+env:
+  ENV:            prod
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  DUCKDB_PATH:    ""   # unused in prod
+
+jobs:
+  # ── 1. dlt extract + load ─────────────────────────────────────────────────
+  ingest:
+    name: dlt — extract & load
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pipeline/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r pipeline/requirements.txt
+
+      - name: Authenticate to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account:            ${{ secrets.PIPELINE_SA_EMAIL }}
+
+      - name: Write dlt secrets
+        env:
+          SOCRATA_APP_TOKEN: ${{ secrets.SOCRATA_APP_TOKEN }}
+        run: |
+          mkdir -p pipeline/.dlt
+          cat > pipeline/.dlt/secrets.toml <<EOF
+          [sources.nyc_311]
+          app_token = "${SOCRATA_APP_TOKEN}"
+          EOF
+
+      - name: Copy dlt config
+        run: cp .dlt/config.toml pipeline/.dlt/config.toml
+
+      - name: Run dlt pipeline
+        working-directory: pipeline
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ env.GOOGLE_APPLICATION_CREDENTIALS }}
+          FULL_REFRESH: ${{ inputs.full_refresh && '--full' || '' }}
+        run: python pipeline.py $FULL_REFRESH
+
+  # ── 2. dbt transform + test ───────────────────────────────────────────────
+  transform:
+    name: dbt — transform & test
+    runs-on: ubuntu-latest
+    needs: ingest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: transform/requirements.txt
+
+      - name: Install dbt + adapters
+        run: pip install -r transform/requirements.txt
+
+      - name: Authenticate to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account:            ${{ secrets.DBT_SA_EMAIL }}
+
+      - name: Check source freshness
+        working-directory: transform
+        env:
+          DBT_PROFILES_DIR: .
+        run: dbt source freshness --profiles-dir . --target prod
+
+      - name: Install dbt packages
+        working-directory: transform
+        run: dbt deps
+
+      - name: Run dbt models
+        working-directory: transform
+        env:
+          DBT_PROFILES_DIR: .
+        run: dbt run --target prod --profiles-dir .
+
+      - name: Run dbt tests
+        working-directory: transform
+        env:
+          DBT_PROFILES_DIR: .
+        run: dbt test --target prod --profiles-dir . --store-failures
+
+      - name: Run Elementary
+        working-directory: transform
+        env:
+          DBT_PROFILES_DIR: .
+        run: |
+          # edr reads profiles.yml via --profiles-dir (same file dbt uses — no separate config needed)
+          edr monitor \
+            --project-dir . \
+            --profiles-dir . \
+            --profile concrete_data \
+            --target prod \
+            --env prod
+
+      - name: Upload dbt artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-artifacts
+          path: transform/target/
+          retention-days: 7
+
+  # ── 3. Evidence build + deploy ────────────────────────────────────────────
+  deploy-dashboard:
+    name: Evidence — build & deploy
+    runs-on: ubuntu-latest
+    needs: transform
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Authenticate to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account:            ${{ secrets.DASHBOARD_SA_EMAIL }}
+
+      - name: Install Evidence dependencies
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Build Evidence site
+        working-directory: dashboard
+        env:
+          EVIDENCE_SOURCE__DEFAULT__CONNECTOR: bigquery
+          EVIDENCE_SOURCE__DEFAULT__PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          EVIDENCE_SOURCE__DEFAULT__DATASET: nyc_311_marts
+          # GOOGLE_APPLICATION_CREDENTIALS is set by the google-github-actions/auth step above
+        run: npm run build
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token:   ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id:  ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: dashboard
+          vercel-args: "--prod"

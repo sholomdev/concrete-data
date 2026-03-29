@@ -1,0 +1,21 @@
+# Evidence connection config — https://docs.evidence.dev/core-concepts/data-sources
+#
+# Evidence v35 reads connection details from environment variables at build time.
+# This file defines the source NAME only; credentials come from env vars.
+#
+# ── Dev (DuckDB) ──────────────────────────────────────────────────────────────
+# Set these locally or in .env (gitignored):
+#   EVIDENCE_SOURCE__DEFAULT__CONNECTOR=duckdb
+#   EVIDENCE_SOURCE__DEFAULT__FILENAME=/path/to/concrete_data_dev.duckdb
+#
+# ── Prod (BigQuery) ───────────────────────────────────────────────────────────
+# Set these as Vercel env vars and GitHub Actions secrets:
+#   EVIDENCE_SOURCE__DEFAULT__CONNECTOR=bigquery
+#   EVIDENCE_SOURCE__DEFAULT__PROJECT_ID=your-gcp-project-id
+#   EVIDENCE_SOURCE__DEFAULT__DATASET=nyc_311_marts
+#   GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
+#   (or use ADC via Workload Identity — no key file needed in GH Actions)
+
+sources:
+  - name: default
+    type: "${EVIDENCE_SOURCE__DEFAULT__CONNECTOR}"
