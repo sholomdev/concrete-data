@@ -33,13 +33,10 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account:            ${{ secrets.TERRAFORM_SA_EMAIL }}
+          service_account:            ${{ secrets.PIPELINE_SA_EMAIL }}
 
-      - name: Terraform init
-        run: terraform init
-
-      - name: Terraform validate
-        run: terraform validate
+      - run: terraform init
+      - run: terraform validate
 
       - name: Terraform plan
         id: plan
@@ -47,6 +44,7 @@ jobs:
           terraform plan \
             -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
             -var="github_repo=sholomdev/concrete-data" \
+            -var="region=${{ secrets.GCP_REGION }}" \
             -out=tfplan \
             -no-color 2>&1 | tee plan_output.txt
 
@@ -57,14 +55,14 @@ jobs:
           script: |
             const fs = require('fs');
             const plan = fs.readFileSync('infra/plan_output.txt', 'utf8');
-            const truncated = plan.length > 60000
+            const body = plan.length > 60000
               ? plan.substring(0, 60000) + '\n\n... (truncated)'
               : plan;
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `### Terraform plan\n\`\`\`\n${truncated}\n\`\`\``
+              body: `### Terraform plan\n\`\`\`\n${body}\n\`\`\``
             });
 
       - name: Terraform apply

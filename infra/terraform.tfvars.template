@@ -2,5 +2,6 @@
 project_id  = "YOUR_GCP_PROJECT_ID"
 github_repo = "sholomdev/concrete-data"
 environment = "prod"
-bq_location = "US"
+region      = "us-central1"
+bq_location  = "US"
 gcs_location = "US"

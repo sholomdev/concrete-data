@@ -1,35 +1,35 @@
 # concrete-data — developer shortcuts
-# Usage: make <target>
+.PHONY: help install pipeline-dev dbt-dev dashboard-dev dev \
+        test-pipeline test-dbt lint fmt \
+        build-image push-image run-job \
+        tf-plan tf-apply clean
 
-.PHONY: help install pipeline-dev dbt-dev dashboard-dev test-pipeline test-dbt \
-        pipeline-prod dbt-prod full-refresh fmt lint clean
-
-DUCKDB_PATH ?= $(shell pwd)/concrete_data_dev.duckdb
+DUCKDB_PATH    ?= $(shell pwd)/concrete_data_dev.duckdb
+GCP_PROJECT_ID ?= $(shell gcloud config get-value project 2>/dev/null)
+GCP_REGION     ?= us-central1
+IMAGE_URL      ?= $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT_ID)/concrete-data/pipeline
 
 help:
 	@echo ""
-	@echo "  Development"
-	@echo "  -----------"
+	@echo "  Local development"
 	@echo "  make install         Install all Python + Node deps"
-	@echo "  make pipeline-dev    Run dlt pipeline → DuckDB"
-	@echo "  make dbt-dev         Run dbt models + tests → DuckDB"
-	@echo "  make dashboard-dev   Start Evidence dev server (DuckDB)"
-	@echo "  make dev             Run all three in sequence"
+	@echo "  make pipeline-dev    dlt → DuckDB"
+	@echo "  make dbt-dev         dbt run + test → DuckDB"
+	@echo "  make dashboard-dev   Evidence dev server (DuckDB, localhost:3000)"
+	@echo "  make dev             pipeline-dev + dbt-dev"
 	@echo ""
-	@echo "  Testing"
-	@echo "  -------"
-	@echo "  make test-pipeline   Smoke-test the dlt source"
+	@echo "  Testing / lint"
+	@echo "  make test-pipeline   pytest smoke tests (DuckDB)"
 	@echo "  make test-dbt        dbt compile + test (DuckDB)"
-	@echo "  make lint            Ruff lint on pipeline/"
+	@echo "  make lint            ruff check"
+	@echo "  make fmt             ruff format"
 	@echo ""
-	@echo "  Production (requires GCP auth)"
-	@echo "  -------"
-	@echo "  make pipeline-prod   Run dlt → BigQuery"
-	@echo "  make dbt-prod        Run dbt → BigQuery"
-	@echo "  make full-refresh    Drop + reload all data (prod)"
+	@echo "  Docker / Cloud Run"
+	@echo "  make build-image     Build Docker image locally"
+	@echo "  make push-image      Build + push to Artifact Registry"
+	@echo "  make run-job         Trigger Cloud Run Job and stream logs"
 	@echo ""
-	@echo "  Infra"
-	@echo "  -----"
+	@echo "  Terraform"
 	@echo "  make tf-plan         terraform plan"
 	@echo "  make tf-apply        terraform apply"
 	@echo ""
@@ -40,16 +40,16 @@ install:
 	cd dashboard && npm install
 	cd transform && dbt deps
 
-# ── Dev pipeline ─────────────────────────────────────────────────────────────
+# ── Dev ───────────────────────────────────────────────────────────────────────
 
 pipeline-dev:
 	cd pipeline && ENV=dev DUCKDB_PATH=$(DUCKDB_PATH) python pipeline.py
 
 dbt-dev:
 	cd transform && \
-	  ENV=dev DUCKDB_PATH=$(DUCKDB_PATH) DBT_PROFILES_DIR=. \
-	  dbt run --target dev --profiles-dir . && \
-	  ENV=dev DUCKDB_PATH=$(DUCKDB_PATH) DBT_PROFILES_DIR=. \
+	  ENV=dev DUCKDB_PATH=$(DUCKDB_PATH) \
+	  dbt run  --target dev --profiles-dir . && \
+	  ENV=dev DUCKDB_PATH=$(DUCKDB_PATH) \
 	  dbt test --target dev --profiles-dir .
 
 dashboard-dev:
@@ -61,32 +61,16 @@ dashboard-dev:
 dev: pipeline-dev dbt-dev
 	@echo "Run 'make dashboard-dev' to start the Evidence server."
 
-# ── Prod pipeline ─────────────────────────────────────────────────────────────
-
-pipeline-prod:
-	cd pipeline && ENV=prod python pipeline.py
-
-dbt-prod:
-	cd transform && \
-	  ENV=prod DBT_PROFILES_DIR=. \
-	  dbt source freshness --target prod --profiles-dir . && \
-	  dbt run --target prod --profiles-dir . && \
-	  dbt test --target prod --profiles-dir . --store-failures
-
-full-refresh:
-	cd pipeline && ENV=prod python pipeline.py --full
-	$(MAKE) dbt-prod
-
-# ── Testing / lint ─────────────────────────────────────────────────────────
+# ── Testing / lint ────────────────────────────────────────────────────────────
 
 test-pipeline:
 	ENV=dev DUCKDB_PATH=$(DUCKDB_PATH) pytest pipeline/tests/ -v
 
 test-dbt:
 	cd transform && \
-	  ENV=dev DUCKDB_PATH=$(DUCKDB_PATH) DBT_PROFILES_DIR=. \
+	  ENV=dev DUCKDB_PATH=$(DUCKDB_PATH) \
 	  dbt compile --target dev --profiles-dir . && \
-	  dbt test --target dev --profiles-dir .
+	  dbt test   --target dev --profiles-dir .
 
 lint:
 	ruff check pipeline/ --config pyproject.toml
@@ -95,19 +79,40 @@ lint:
 fmt:
 	ruff format pipeline/ --config pyproject.toml
 
-# ── Terraform ─────────────────────────────────────────────────────────────
+# ── Docker / Cloud Run ────────────────────────────────────────────────────────
+
+build-image:
+	docker build -t $(IMAGE_URL):local .
+
+push-image:
+	gcloud auth configure-docker $(GCP_REGION)-docker.pkg.dev --quiet
+	docker build \
+	  --tag $(IMAGE_URL):local \
+	  --tag $(IMAGE_URL):latest \
+	  .
+	docker push $(IMAGE_URL):local
+	docker push $(IMAGE_URL):latest
+
+run-job:
+	gcloud run jobs execute nyc-311-pipeline \
+	  --region $(GCP_REGION) \
+	  --wait
+
+# ── Terraform ─────────────────────────────────────────────────────────────────
 
 tf-plan:
 	cd infra && terraform plan \
 	  -var="project_id=$(GCP_PROJECT_ID)" \
-	  -var="github_repo=sholomdev/concrete-data"
+	  -var="github_repo=sholomdev/concrete-data" \
+	  -var="region=$(GCP_REGION)"
 
 tf-apply:
 	cd infra && terraform apply \
 	  -var="project_id=$(GCP_PROJECT_ID)" \
-	  -var="github_repo=sholomdev/concrete-data"
+	  -var="github_repo=sholomdev/concrete-data" \
+	  -var="region=$(GCP_REGION)"
 
-# ── Cleanup ───────────────────────────────────────────────────────────────
+# ── Cleanup ───────────────────────────────────────────────────────────────────
 
 clean:
 	rm -f concrete_data_dev.duckdb concrete_data_dev.duckdb.wal

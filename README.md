@@ -4,25 +4,54 @@
 ![CI](https://github.com/sholomdev/concrete-data/actions/workflows/ci.yml/badge.svg)
 ![Terraform](https://github.com/sholomdev/concrete-data/actions/workflows/terraform.yml/badge.svg)
 
-Daily incremental pipeline ingesting NYC 311 service requests from the Socrata API into BigQuery, transformed with dbt, and published as a static Evidence dashboard on Vercel.
+Daily incremental pipeline ingesting NYC 311 service requests from the Socrata API
+into BigQuery, transformed with dbt, and published as a static Evidence dashboard
+hosted on GCS.
 
 ```
-Socrata API → dlt → BigQuery (raw) → dbt → BigQuery (marts) → Evidence → Vercel
-                       ↓
-                   GCS backup
+Socrata API → dlt → BigQuery (raw) → dbt → BigQuery (marts) → Evidence → GCS
+                         ↓
+                     GCS backup
 ```
 
 ## Stack
 
-| Layer | Tool | Env |
-|-------|------|-----|
-| Ingest | dlt | dev: DuckDB · prod: BigQuery + GCS |
+| Layer | Tool | Notes |
+|---|---|---|
+| Ingest | dlt | dev: DuckDB · prod: BigQuery + GCS backup |
 | Transform | dbt Core + dbt-expectations | dev: DuckDB · prod: BigQuery |
-| Observability | Elementary | prod: BigQuery |
-| Dashboard | Evidence | dev: DuckDB · prod: BigQuery → Vercel |
-| Orchestration | GitHub Actions (cron 05:00 UTC) | — |
-| Infrastructure | Terraform | GCP |
-| Auth | Workload Identity Federation | GitHub Actions → GCP |
+| Observability | Elementary | prod only |
+| Dashboard | Evidence | Static site hosted on GCS |
+| Container | Docker + Artifact Registry | Cloud Run Job runs the pipeline |
+| Orchestration | Cloud Scheduler → Cloud Run Job | Daily at 05:00 UTC |
+| CI/CD | GitHub Actions | Build image on push; Terraform on infra changes |
+| Infrastructure | Terraform | All GCP resources |
+| Auth | Workload Identity Federation | GitHub Actions → GCP, no long-lived keys |
+
+## Architecture
+
+```
+GitHub push
+    │
+    ▼
+GitHub Actions
+    ├── Build Docker image
+    ├── Push to Artifact Registry
+    ├── Update Cloud Run Job image
+    └── Trigger Cloud Run Job (waits for completion)
+
+Cloud Scheduler (05:00 UTC daily)
+    └── Trigger Cloud Run Job
+
+Cloud Run Job (Docker container)
+    ├── dlt → BigQuery raw + GCS backup
+    ├── dbt source freshness check
+    ├── dbt run (staging → marts)
+    ├── dbt test + store failures
+    ├── Elementary monitor
+    ├── Evidence build
+    └── Deploy static site → GCS bucket
+```
 
 ---
 
@@ -31,142 +60,124 @@ Socrata API → dlt → BigQuery (raw) → dbt → BigQuery (marts) → Evidence
 ### Prerequisites
 - Python 3.12+
 - Node.js 20+
-- DuckDB (installed via pip with dlt)
+- Docker (for image builds)
+- gcloud CLI
 
-### 1. Clone and set up secrets
+### 1. Clone and configure secrets
 
 ```bash
 git clone https://github.com/sholomdev/concrete-data
 cd concrete-data
-
 cp .dlt/secrets.toml.template .dlt/secrets.toml
-# Edit .dlt/secrets.toml — add your Socrata app token.
-# For local dev you can leave BigQuery credentials empty.
+# Add your Socrata app token to .dlt/secrets.toml
 ```
 
-### 2. Run the pipeline locally (DuckDB)
+### 2. Install dependencies
 
 ```bash
-cd pipeline
-pip install -r requirements.txt
-
-ENV=dev python pipeline.py
-# Output: concrete_data_dev.duckdb in the repo root
+make install
 ```
 
-Force a full reload:
+### 3. Run the pipeline locally (DuckDB — no GCP needed)
+
 ```bash
-ENV=dev python pipeline.py --full
+make pipeline-dev   # dlt → concrete_data_dev.duckdb
+make dbt-dev        # dbt run + test
+make dashboard-dev  # Evidence at http://localhost:3000
 ```
 
-### 3. Run dbt (DuckDB)
-
+Or all at once:
 ```bash
-cd transform
-pip install -r requirements.txt
-dbt deps
-
-ENV=dev DUCKDB_PATH=../concrete_data_dev.duckdb \
-  dbt run --target dev --profiles-dir .
-
-ENV=dev DUCKDB_PATH=../concrete_data_dev.duckdb \
-  dbt test --target dev --profiles-dir .
-```
-
-### 4. Run the Evidence dashboard locally (DuckDB)
-
-```bash
-cd dashboard
-npm install
-
-# Copy the example env file and point it at your local DuckDB
-cp .env.example .env
-# Edit .env if your duckdb path differs from the default
-
-npm run dev
-# Opens at http://localhost:3000
+make dev
 ```
 
 ---
 
 ## Deploying to production
 
-### Step 1 — Bootstrap GCP
+### Step 1 — GCP bootstrap
 
 ```bash
-# Create the Terraform state bucket manually (chicken-and-egg)
-gsutil mb -l US gs://YOUR_PROJECT_ID-tf-state
+export GCP_PROJECT_ID=your-project-id
 
-# Update infra/main.tf backend bucket name, then:
+# Enable APIs
+gcloud services enable \
+  bigquery.googleapis.com storage.googleapis.com \
+  iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com \
+  run.googleapis.com artifactregistry.googleapis.com \
+  cloudscheduler.googleapis.com cloudbuild.googleapis.com
+
+# Create Terraform state bucket (must exist before terraform init)
+gsutil mb -l US gs://${GCP_PROJECT_ID}-tf-state
+gsutil versioning set on gs://${GCP_PROJECT_ID}-tf-state
+```
+
+### Step 2 — Configure Terraform
+
+Edit `infra/main.tf` backend block — replace `YOUR_GCP_PROJECT_ID` with your real project ID.
+
+```bash
+cp infra/terraform.tfvars.template infra/terraform.tfvars
+# Edit infra/terraform.tfvars with your project_id, github_repo, region
+```
+
+### Step 3 — Run Terraform
+
+```bash
 cd infra
-cp terraform.tfvars.template terraform.tfvars
-# Edit terraform.tfvars
-
 terraform init
 terraform plan
 terraform apply
+terraform output   # capture these values for GitHub secrets
 ```
 
-Terraform creates:
-- BigQuery datasets: `nyc_311_raw`, `nyc_311_staging`, `nyc_311_marts`, `elementary`
-- GCS bucket for raw backup (90-day lifecycle)
-- Three service accounts: `dlt-pipeline`, `dbt-runner`, `evidence-dashboard`
-- Workload Identity Federation pool bound to this GitHub repo
+Terraform creates: BigQuery datasets, GCS buckets (backup, dashboard, state),
+Artifact Registry, Cloud Run Job, Cloud Scheduler, service accounts, WIF pool.
 
-### Step 2 — Add GitHub Secrets
+### Step 4 — GitHub Secrets
 
-After `terraform apply`, run `terraform output` and add these as GitHub Actions secrets:
+Go to repo → Settings → Secrets and variables → Actions:
 
-| Secret | Source |
-|--------|--------|
-| `GCP_PROJECT_ID` | Your GCP project ID |
+| Secret | Value |
+|---|---|
+| `GCP_PROJECT_ID` | your GCP project ID |
+| `GCP_REGION` | e.g. `us-central1` |
 | `WIF_PROVIDER` | `terraform output workload_identity_provider` |
 | `PIPELINE_SA_EMAIL` | `terraform output pipeline_sa_email` |
-| `DBT_SA_EMAIL` | `terraform output dbt_sa_email` |
-| `DASHBOARD_SA_EMAIL` | `terraform output dashboard_sa_email` |
-| `TERRAFORM_SA_EMAIL` | `dlt-pipeline` SA (or a dedicated terraform SA) |
-| `SOCRATA_APP_TOKEN` | [Register at data.cityofnewyork.us](https://data.cityofnewyork.us/profile/app_tokens) |
-| `VERCEL_TOKEN` | Vercel dashboard → Settings → Tokens |
-| `VERCEL_ORG_ID` | Vercel dashboard → Settings |
-| `VERCEL_PROJECT_ID` | Vercel project settings |
+| `DASHBOARD_BUCKET` | `terraform output dashboard_bucket` |
+| `SOCRATA_APP_TOKEN` | from data.cityofnewyork.us → App Tokens |
 
-### Step 3 — Update config.toml
+No Vercel secrets needed — everything runs in GCP.
 
-Edit `.dlt/config.toml`:
+### Step 5 — Update .dlt/config.toml
+
 ```toml
 [destination.bigquery]
-project = "YOUR_GCP_PROJECT_ID"
+project = "your-actual-project-id"
 
 [destination.gcs_backup]
-bucket_url = "gs://YOUR_GCP_PROJECT_ID-nyc311-raw-backup"
+bucket_url = "gs://your-project-id-nyc311-raw-backup"
 ```
 
-### Step 4 — Trigger first run
+### Step 6 — First run (backfill)
 
 ```bash
-# Full refresh to backfill from Jan 1 2025
-gh workflow run pipeline.yml -f full_refresh=true
+# Trigger a backfill from Jan 1 2025 via GitHub Actions
+gh workflow run backfill.yml -f start_date=2025-01-01
+
+# Or run the Cloud Run Job directly (after pushing the image)
+make push-image
+make run-job
 ```
 
-After the first run, the daily cron takes over at 05:00 UTC.
+After the first run, Cloud Scheduler takes over at 05:00 UTC daily.
 
-### Manual backfills
-
-The backfill workflow lets you reload a specific date range without touching the daily pipeline:
+### Step 7 — View the dashboard
 
 ```bash
-# Backfill a specific window
-gh workflow run backfill.yml \
-  -f start_date=2025-01-01 \
-  -f end_date=2025-03-31
-
-# Dry run — prints available row count, loads nothing
-gh workflow run backfill.yml \
-  -f start_date=2025-06-01 \
-  -f dry_run=true
+terraform output dashboard_url
+# https://storage.googleapis.com/your-project-nyc311-dashboard/index.html
 ```
-
-Or trigger from GitHub → Actions → Backfill → Run workflow.
 
 ---
 
@@ -174,49 +185,39 @@ Or trigger from GitHub → Actions → Backfill → Run workflow.
 
 ```
 concrete-data/
+├── Dockerfile                   # Cloud Run Job container
+├── entrypoint.sh                # Pipeline sequence: dlt → dbt → Evidence → GCS
+├── Makefile                     # Developer shortcuts
+├── pyproject.toml               # ruff + pytest config
 ├── .dlt/
-│   ├── config.toml          # non-secret dlt config
+│   ├── config.toml              # Non-secret dlt config
 │   └── secrets.toml.template
 ├── .github/workflows/
-│   ├── pipeline.yml         # daily cron: dlt → dbt → Evidence
-│   ├── ci.yml               # PR checks with DuckDB
-│   ├── backfill.yml         # manual: historical reload with date range
-│   └── terraform.yml        # infra plan/apply on infra/ changes
-├── pyproject.toml            # ruff lint rules + pytest config
-├── Makefile                  # developer shortcuts (make dev, make lint, etc.)
+│   ├── pipeline.yml             # Build image + trigger Cloud Run Job on push
+│   ├── ci.yml                   # PR checks: lint, DuckDB pipeline, Docker build
+│   ├── backfill.yml             # Manual backfill via Cloud Run Job
+│   └── terraform.yml            # Plan/apply on infra/ changes
 ├── pipeline/
-│   ├── sources/
-│   │   └── nyc_311.py       # dlt source + incremental resource
-│   ├── tests/
-│   │   └── test_source.py   # pytest smoke tests (DuckDB, no GCP needed)
-│   └── pipeline.py          # runner (ENV=dev|prod)
+│   ├── sources/nyc_311.py       # dlt source + incremental resource
+│   ├── tests/test_source.py     # pytest smoke tests
+│   └── pipeline.py              # Runner (ENV=dev|prod)
 ├── transform/
 │   ├── models/
-│   │   ├── sources.yml       # source freshness config
-│   │   ├── staging/
-│   │   │   ├── stg_311_requests.sql
-│   │   │   └── stg_311_requests.yml  # Elementary + dbt-expectations tests
-│   │   └── marts/
-│   │       ├── mart_complaints_daily.sql
-│   │       ├── mart_resolution_time.sql
-│   │       ├── mart_open_requests.sql
-│   │       ├── mart_pipeline_health.sql
-│   │       └── schema.yml
-│   ├── macros/
-│   │   └── cross_db.sql      # BigQuery/DuckDB compatibility shims
+│   │   ├── sources.yml          # Source freshness config
+│   │   ├── staging/             # stg_311_requests
+│   │   └── marts/               # complaints_daily, resolution_time, open_requests, health
+│   ├── macros/cross_db.sql      # BigQuery/DuckDB compatibility shims
 │   ├── dbt_project.yml
-│   ├── edr_profiles.yml      # Elementary edr monitor profile
-│   ├── packages.yml          # elementary, dbt-expectations
-│   └── profiles.yml          # dev=DuckDB, prod=BigQuery
+│   ├── packages.yml             # elementary, dbt-expectations
+│   └── profiles.yml             # dev=DuckDB, prod=BigQuery
 ├── dashboard/
 │   ├── pages/
-│   │   ├── index.md          # Overview: KPIs, volume, top complaints
-│   │   ├── insights/index.md # Resolution time, open requests, channels
-│   │   └── health.md         # Pipeline health: freshness, anomalies, dbt tests
-│   ├── vercel.json           # Vercel deployment + cache headers
+│   │   ├── index.md             # Overview KPIs
+│   │   ├── insights/index.md    # Resolution time, open requests
+│   │   └── health.md            # Pipeline health, dbt tests
 │   └── package.json
 └── infra/
-    ├── main.tf               # BQ datasets, GCS, SAs, WIF
+    ├── main.tf                  # All GCP resources
     ├── variables.tf
     ├── outputs.tf
     └── terraform.tfvars.template
@@ -224,18 +225,18 @@ concrete-data/
 
 ## Dashboard pages
 
-| Page | URL | Description |
-|------|-----|-------------|
-| Overview | `/` | 30-day KPIs, daily volume, top complaints, borough breakdown |
-| Insights | `/insights` | Resolution times, open request aging, channel mix |
-| Health | `/health` | Row count anomalies, dbt test results, Elementary output |
+| Page | Description |
+|---|---|
+| `/` | 30-day KPIs, daily volume, top complaint types, borough breakdown |
+| `/insights` | Resolution times by type/borough, open request aging, channel mix |
+| `/health` | Row count anomalies, dbt test results, Elementary output |
 
 ## Monitoring
 
-The pipeline is considered healthy when:
-1. GitHub Actions badge is green (workflow ran without error)
+Pipeline is healthy when:
+1. Cloud Run Job execution shows **Succeeded** in GCP Console → Cloud Run → Jobs
 2. `dbt source freshness` passes (data updated within 25 hours)
-3. Row count is within 30% of the 7-day rolling average
-4. All dbt tests pass (warnings reviewed, failures block deploy)
+3. Row count is within 30% of 7-day rolling average (visible on `/health` page)
+4. All dbt tests pass
 
-Anomalies surface automatically on the `/health` Evidence page.
+Logs: GCP Console → Cloud Run → Jobs → `nyc-311-pipeline` → Logs tab.

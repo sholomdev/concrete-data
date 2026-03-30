@@ -7,14 +7,16 @@ on:
       - "pipeline/**"
       - "transform/**"
       - "dashboard/**"
+      - "Dockerfile"
+      - "entrypoint.sh"
 
 env:
-  ENV:        dev
+  ENV:         dev
   DUCKDB_PATH: /tmp/concrete_data_dev.duckdb
 
 jobs:
-  # ── Lint + type check Python ─────────────────────────────────────────────
-  lint-python:
+  # ── Lint Python ───────────────────────────────────────────────────────────
+  lint:
     name: Python lint
     runs-on: ubuntu-latest
     steps:
@@ -26,8 +28,8 @@ jobs:
       - run: ruff check pipeline/ --config pyproject.toml
       - run: ruff format --check pipeline/ --config pyproject.toml
 
-  # ── dlt smoke test (DuckDB, no GCP needed) ───────────────────────────────
-  test-pipeline-dev:
+  # ── dlt smoke test (DuckDB, no GCP) ──────────────────────────────────────
+  test-pipeline:
     name: dlt smoke test (DuckDB)
     runs-on: ubuntu-latest
     steps:
@@ -44,24 +46,18 @@ jobs:
       - name: Write minimal secrets
         run: |
           mkdir -p pipeline/.dlt
-          echo '[sources.nyc_311]' > pipeline/.dlt/secrets.toml
-          echo 'app_token = ""'   >> pipeline/.dlt/secrets.toml
+          cp .dlt/config.toml pipeline/.dlt/config.toml
+          printf '[sources.nyc_311]\napp_token = ""\n' > pipeline/.dlt/secrets.toml
 
-      - name: Copy config
-        run: cp .dlt/config.toml pipeline/.dlt/config.toml
-
-      - name: Run pipeline (DuckDB, 100-row sample)
+      - name: Run pipeline (DuckDB)
         working-directory: pipeline
-        env:
-          ENV:        dev
-          DUCKDB_PATH: /tmp/concrete_data_dev.duckdb
         run: python pipeline.py
 
   # ── dbt compile + test (DuckDB) ──────────────────────────────────────────
-  test-dbt-dev:
+  test-dbt:
     name: dbt compile & test (DuckDB)
     runs-on: ubuntu-latest
-    needs: test-pipeline-dev
+    needs: test-pipeline
     steps:
       - uses: actions/checkout@v4
 
@@ -72,38 +68,27 @@ jobs:
           cache-dependency-path: transform/requirements.txt
 
       - run: pip install -r transform/requirements.txt
-      - name: dbt deps
+      - run: cd transform && dbt deps
+      - name: dbt run + test (DuckDB)
         working-directory: transform
-        run: dbt deps
+        run: |
+          dbt run  --target dev --profiles-dir .
+          dbt test --target dev --profiles-dir .
 
-      - name: dbt compile
-        working-directory: transform
-        env:
-          ENV:        dev
-          DUCKDB_PATH: /tmp/concrete_data_dev.duckdb
-          DBT_PROFILES_DIR: .
-        run: dbt compile --target dev --profiles-dir .
+  # ── Docker build check ────────────────────────────────────────────────────
+  build-docker:
+    name: Docker build check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image (no push)
+        run: docker build --tag concrete-data-pipeline:ci-check .
 
-      - name: dbt run (dev)
-        working-directory: transform
-        env:
-          ENV:        dev
-          DUCKDB_PATH: /tmp/concrete_data_dev.duckdb
-          DBT_PROFILES_DIR: .
-        run: dbt run --target dev --profiles-dir .
-
-      - name: dbt test (dev)
-        working-directory: transform
-        env:
-          ENV:        dev
-          DUCKDB_PATH: /tmp/concrete_data_dev.duckdb
-          DBT_PROFILES_DIR: .
-        run: dbt test --target dev --profiles-dir .
-
-  # ── Evidence build check ─────────────────────────────────────────────────
+  # ── Evidence build check ──────────────────────────────────────────────────
   test-dashboard:
     name: Evidence build check
     runs-on: ubuntu-latest
+    needs: test-dbt
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -111,12 +96,10 @@ jobs:
           node-version: "20"
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
-      - name: Install
-        working-directory: dashboard
-        run: npm ci
+      - run: cd dashboard && npm ci
       - name: Build (DuckDB mode)
         working-directory: dashboard
         env:
           EVIDENCE_SOURCE__DEFAULT__CONNECTOR: duckdb
-          EVIDENCE_SOURCE__DEFAULT__FILENAME: /tmp/concrete_data_dev.duckdb
+          EVIDENCE_SOURCE__DEFAULT__FILENAME:  /tmp/concrete_data_dev.duckdb
         run: npm run build

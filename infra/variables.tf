@@ -4,7 +4,7 @@ variable "project_id" {
 }
 
 variable "region" {
-  description = "Default GCP region"
+  description = "Default GCP region for Cloud Run, Artifact Registry, Scheduler"
   type        = string
   default     = "us-central1"
 }
@@ -30,5 +30,4 @@ variable "environment" {
 variable "github_repo" {
   description = "GitHub repo in owner/repo format for WIF"
   type        = string
-  # e.g. "sholomdev/concrete-data"
 }
